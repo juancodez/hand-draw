@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hand Draw</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #050507;
+  overflow: hidden;
+  font-family: 'SF Pro Display', system-ui, -apple-system, sans-serif;
+}
+
+#cam {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  opacity: 0.25;
+  filter: saturate(0.5);
+}
+
+#draw {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#cursor {
+  position: fixed;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+  box-shadow: 0 0 12px rgba(255,255,255,0.6), 0 0 24px rgba(255,255,255,0.2);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: transform 0.05s, width 0.15s, height 0.15s, background 0.15s;
+  z-index: 10;
+}
+#cursor.erase {
+  width: 48px;
+  height: 48px;
+  background: rgba(255,100,100,0.15);
+  box-shadow: 0 0 0 1.5px rgba(255,100,100,0.4);
+}
+#cursor.hidden { opacity: 0; }
+
+/* Status */
+#status {
+  position: fixed;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,0.25);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 10;
+  transition: opacity 0.4s;
+}
+
+/* Mode badge */
+#mode {
+  position: fixed;
+  top: 28px;
+  right: 32px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.2);
+  pointer-events: none;
+  z-index: 10;
+  transition: color 0.2s;
+}
+#mode.draw { color: rgba(180,210,255,0.7); }
+#mode.erase { color: rgba(255,120,120,0.7); }
+
+/* Footer */
+#footer {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 28px 18px;
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  z-index: 20;
+}
+
+.sep {
+  width: 1px;
+  height: 20px;
+  background: rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+
+/* Color swatches */
+.swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  outline: none;
+  flex-shrink: 0;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.swatch:hover { transform: scale(1.2); }
+.swatch.active { border-color: rgba(255,255,255,0.7); }
+
+/* Slider */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 72px;
+  height: 2px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 1px;
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.85);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+/* Clear button */
+#clear-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.4);
+  padding: 5px 14px;
+  border-radius: 100px;
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  font-family: inherit;
+}
+#clear-btn:hover {
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.7);
+  border-color: rgba(255,255,255,0.2);
+}
+</style>
+</head>
+<body>
+
+<video id="cam" autoplay playsinline muted></video>
+<canvas id="draw"></canvas>
+<div id="cursor" class="hidden"></div>
+<div id="status">Initialising hand tracking…</div>
+<div id="mode">—</div>
+
+<div id="footer">
+  <!-- Colors -->
+  <div class="swatch active" data-color="255,255,255"   style="background:rgb(255,255,255)"></div>
+  <div class="swatch"        data-color="140,190,255"   style="background:rgb(140,190,255)"></div>
+  <div class="swatch"        data-color="180,140,255"   style="background:rgb(180,140,255)"></div>
+  <div class="swatch"        data-color="120,255,190"   style="background:rgb(120,255,190)"></div>
+  <div class="swatch"        data-color="255,200,100"   style="background:rgb(255,200,100)"></div>
+
+  <div class="sep"></div>
+
+  <!-- Brush size -->
+  <input type="range" id="size" min="2" max="28" value="5" title="Brush size">
+
+  <div class="sep"></div>
+
+  <button id="clear-btn">Clear</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+const video    = document.getElementById('cam');
+const canvas   = document.getElementById('draw');
+const ctx      = canvas.getContext('2d');
+const cursor   = document.getElementById('cursor');
+const statusEl = document.getElementById('status');
+const modeEl   = document.getElementById('mode');
+const sizeEl   = document.getElementById('size');
+const clearBtn = document.getElementById('clear-btn');
+
+// State
+let color    = [255, 255, 255];
+let brushPx  = 5;
+let prevPt   = null;
+
+// Resize canvas — keep existing drawing
+function resize() {
+  const tmp = canvas.toDataURL();
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const img = new Image();
+  img.onload = () => ctx.drawImage(img, 0, 0);
+  img.src = tmp;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Color swatches
+document.querySelectorAll('.swatch').forEach(s => {
+  s.addEventListener('click', () => {
+    document.querySelectorAll('.swatch').forEach(x => x.classList.remove('active'));
+    s.classList.add('active');
+    color = s.dataset.color.split(',').map(Number);
+  });
+});
+
+sizeEl.addEventListener('input', () => { brushPx = +sizeEl.value; });
+clearBtn.addEventListener('click', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
+
+// MediaPipe landmark indices
+const TIP_IDX  = [8, 12, 16, 20];
+const PIP_IDX  = [6, 10, 14, 18];
+const IDX_TIP  = 8;
+const PALM_CTR = 9; // middle-finger MCP ≈ palm center
+
+function fingersUp(lm) {
+  return TIP_IDX.filter((t, i) => lm[t].y < lm[PIP_IDX[i]].y).length;
+}
+
+function drawGlass(from, to, erase, radius) {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (erase) {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.lineWidth = radius * 6;
+    ctx.strokeStyle = 'rgba(0,0,0,1)';
+  } else {
+    const [r, g, b] = color;
+    ctx.globalCompositeOperation = 'source-over';
+    // Outer glow pass
+    ctx.lineWidth = radius * 2.4;
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.06)`;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.5)`;
+    ctx.shadowBlur  = radius * 3;
+    ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+    // Core stroke
+    ctx.lineWidth = radius;
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.88)`;
+    ctx.shadowBlur  = radius * 1.5;
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function onResults(results) {
+  const lm = results.multiHandLandmarks?.[0];
+
+  if (!lm) {
+    statusEl.textContent = 'Show your hand to the camera';
+    modeEl.className = '';
+    modeEl.textContent = '—';
+    cursor.classList.add('hidden');
+    prevPt = null;
+    return;
+  }
+
+  statusEl.textContent = '';
+
+  const up      = fingersUp(lm);
+  const erasing = up >= 3;
+  const drawing = !erasing && up >= 1;
+
+  // Track correct landmark for each mode
+  const trackedLm = erasing ? lm[PALM_CTR] : lm[IDX_TIP];
+  const cx = (1 - trackedLm.x) * canvas.width;  // mirror x
+  const cy = trackedLm.y * canvas.height;
+  const cur = { x: cx, y: cy };
+
+  // Update cursor
+  cursor.classList.remove('hidden', 'erase');
+  cursor.style.left = cx + 'px';
+  cursor.style.top  = cy + 'px';
+  if (erasing) cursor.classList.add('erase');
+
+  // Mode badge
+  if (erasing)      { modeEl.className = 'erase'; modeEl.textContent = 'Erase'; }
+  else if (drawing) { modeEl.className = 'draw';  modeEl.textContent = 'Draw';  }
+  else              { modeEl.className = '';       modeEl.textContent = '—';     }
+
+  if (prevPt && (drawing || erasing)) {
+    drawGlass(prevPt, cur, erasing, brushPx);
+  }
+
+  prevPt = (drawing || erasing) ? cur : null;
+}
+
+// Init Hands
+const hands = new Hands({
+  locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+});
+hands.setOptions({
+  maxNumHands:            1,
+  modelComplexity:        1,
+  minDetectionConfidence: 0.75,
+  minTrackingConfidence:  0.6,
+});
+hands.onResults(onResults);
+
+// Camera feed
+const camera = new Camera(video, {
+  onFrame: async () => hands.send({ image: video }),
+  width: 1280,
+  height: 720,
+});
+camera.start()
+  .then(() => { statusEl.textContent = 'Show your hand to the camera'; })
+  .catch(e => { statusEl.textContent = 'Camera error — ' + e.message; });
+</script>
+</body>
+</html>
