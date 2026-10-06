@@ -207,7 +207,7 @@ let color   = [255, 255, 255];
 let brushPx = 5;
 
 // Drawing EMA — smooths the stroke path only; cursor is raw (no lag)
-const DRW_EMA = 0.22; // lower = smoother stroke, less noise passed through
+const DRW_EMA = 0.45; // higher = stroke tracks finger closely with less lag
 const drwAcc  = [null, null];
 function smoothDraw(x, y) {
   if (drwAcc[0] === null) { drwAcc[0] = x; drwAcc[1] = y; return { x, y }; }
@@ -260,25 +260,22 @@ clearBtn.addEventListener('click', () => ctx.clearRect(0, 0, canvas.width, canva
 // MediaPipe landmark indices
 const PALM_CTR = 9; // middle-finger MCP ≈ palm center
 
-// Squared 3-D distance between two landmarks (z included so it works
-// regardless of hand tilt / rotation).
+// 2-D only — MediaPipe's z is unreliable in normalised image coords
 function d2(a, b) {
-  const dx = a.x - b.x, dy = a.y - b.y, dz = (a.z || 0) - (b.z || 0);
-  return dx * dx + dy * dy + dz * dz;
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return dx * dx + dy * dy;
 }
 
-// A finger is "extended" when its tip is farther from the wrist (lm[0])
-// than its PIP joint is.  This works at any hand angle — no y-comparison.
+// Extended = tip farther from wrist than PIP (2-D, any hand angle)
 function fingerUp(lm, tip, pip) {
   return d2(lm[tip], lm[0]) > d2(lm[pip], lm[0]);
 }
 
-// Draw mode: index extended, all other fingers curled
+// Draw mode: index extended + middle curled.
+// Ring/pinky position ignored — they naturally semi-extend when pointing
+// and requiring them curled causes frequent false negatives mid-stroke.
 function isIndexOnly(lm) {
-  return  fingerUp(lm,  8,  6)   // index  → extended
-      && !fingerUp(lm, 12, 10)   // middle → curled
-      && !fingerUp(lm, 16, 14)   // ring   → curled
-      && !fingerUp(lm, 20, 18);  // pinky  → curled
+  return fingerUp(lm, 8, 6) && !fingerUp(lm, 12, 10);
 }
 
 // Erase mode: 3+ fingers extended
