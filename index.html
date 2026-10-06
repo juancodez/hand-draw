@@ -206,39 +206,26 @@ const clearBtn = document.getElementById('clear-btn');
 let color   = [255, 255, 255];
 let brushPx = 5;
 
-// Two EMA channels: cursor is ultra-smooth (low factor = less jitter),
-// drawing is slightly more responsive so the stroke keeps up.
-let curX = null, curY = null; // cursor EMA accumulators
-let drwX = null, drwY = null; // drawing EMA accumulators
-const CUR_EMA = 0.1;  // very stable cursor — barely moves on tremor
-const DRW_EMA = 0.35; // drawing follows more responsively
+// Drawing EMA — smooths the stroke path only; cursor is raw (no lag)
+const DRW_EMA = 0.35;
+const drwAcc  = [null, null];
+function smoothDraw(x, y) {
+  if (drwAcc[0] === null) { drwAcc[0] = x; drwAcc[1] = y; return { x, y }; }
+  drwAcc[0] += (x - drwAcc[0]) * DRW_EMA;
+  drwAcc[1] += (y - drwAcc[1]) * DRW_EMA;
+  return { x: drwAcc[0], y: drwAcc[1] };
+}
 
 // Catmull-rom drawing buffer
 let pt1 = null; // prev-prev anchor
 let pt2 = null; // prev anchor
 const MIN_DIST = 5; // px — minimum movement to record a new anchor
 
-function ema(acc, x, y, f) {
-  if (acc[0] === null) { acc[0] = x; acc[1] = y; return { x, y }; }
-  acc[0] += (x - acc[0]) * f;
-  acc[1] += (y - acc[1]) * f;
-  return { x: acc[0], y: acc[1] };
-}
-
-// Cursor EMA — call every frame so it always follows the fingertip smoothly
-const curAcc = [null, null];
-const drwAcc = [null, null];
-function smoothCursor(x, y) { return ema(curAcc, x, y, CUR_EMA); }
-function smoothDraw(x, y)   { return ema(drwAcc, x, y, DRW_EMA); }
-
 function resetDrawState() {
   pt1 = null; pt2 = null;
   drwAcc[0] = null; drwAcc[1] = null;
 }
-function resetAll() {
-  resetDrawState();
-  curAcc[0] = null; curAcc[1] = null;
-}
+const resetAll = resetDrawState;
 
 function mid(a, b) { return { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 }; }
 function dist(a, b) {
@@ -375,11 +362,10 @@ function onResults(results) {
   const rawX    = (1 - trackLm.x) * canvas.width;   // mirror x
   const rawY    = trackLm.y * canvas.height;
 
-  // Cursor: ultra-smooth, barely reacts to tremor
-  const cp = smoothCursor(rawX, rawY);
+  // Cursor: raw landmark position — glued to the fingertip, zero lag
   cursor.classList.remove('hidden', 'erase');
-  cursor.style.left = cp.x + 'px';
-  cursor.style.top  = cp.y + 'px';
+  cursor.style.left = rawX + 'px';
+  cursor.style.top  = rawY + 'px';
   if (erasing) cursor.classList.add('erase');
 
   // Mode badge
