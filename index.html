@@ -207,7 +207,7 @@ let color   = [255, 255, 255];
 let brushPx = 5;
 
 // Drawing EMA — smooths the stroke path only; cursor is raw (no lag)
-const DRW_EMA = 0.35;
+const DRW_EMA = 0.22; // lower = smoother stroke, less noise passed through
 const drwAcc  = [null, null];
 function smoothDraw(x, y) {
   if (drwAcc[0] === null) { drwAcc[0] = x; drwAcc[1] = y; return { x, y }; }
@@ -219,7 +219,7 @@ function smoothDraw(x, y) {
 // Catmull-rom drawing buffer
 let pt1 = null; // prev-prev anchor
 let pt2 = null; // prev anchor
-const MIN_DIST = 5; // px — minimum movement to record a new anchor
+const MIN_DIST = 3; // px — tighter threshold = more anchors = smoother curve
 
 function resetDrawState() {
   pt1 = null; pt2 = null;
@@ -285,20 +285,6 @@ function isIndexOnly(lm) {
 function isErasing(lm) {
   return [fingerUp(lm,8,6), fingerUp(lm,12,10), fingerUp(lm,16,14), fingerUp(lm,20,18)]
     .filter(Boolean).length >= 3;
-}
-
-// Small filled dot drawn at each anchor to give visible tracking feedback
-function drawAnchorDot(p, radius) {
-  const [r, g, b] = color;
-  ctx.save();
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.shadowColor = `rgba(${r},${g},${b},0.9)`;
-  ctx.shadowBlur  = radius * 2;
-  ctx.fillStyle   = `rgba(${r},${g},${b},0.9)`;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, radius * 0.55, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
 }
 
 // Smooth quadratic-bezier segment (catmull-rom midpoint style)
@@ -380,13 +366,11 @@ function onResults(results) {
     if (pt2 === null) {
       // First anchor of a new stroke
       pt2 = { x: cur.x, y: cur.y };
-      if (drawing) drawAnchorDot(pt2, brushPx);
     } else if (dist(cur, pt2) >= MIN_DIST) {
       // Finger moved enough — commit a new anchor and draw the bezier segment
       const from = pt1 !== null ? mid(pt1, pt2) : pt2;
       const to   = mid(pt2, cur);
       drawSegment(from, pt2, to, erasing, brushPx);
-      if (drawing) drawAnchorDot(cur, brushPx);
       pt1 = { x: pt2.x, y: pt2.y };
       pt2 = { x: cur.x, y: cur.y };
     }
